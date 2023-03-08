@@ -307,3 +307,268 @@ WITH data_analysis_goals AS
         )
 )
 SELECT * FROM data_analysis_goals;
+
+
+/*--------------------------------------------
+    ADDITIONAL DATA ANALYSIS
+*/--------------------------------------------
+
+--
+-- With France as the country with the highest loss due to disputes,
+-- we first investigate the average invoice processing time
+-- for each country.
+--
+
+/* Average processing time and number of invoices for disputes */
+SELECT
+    country,
+    ROUND(
+        AVG(days_to_settle)
+    , 0) AS average_days_to_settle,
+    COUNT(invoice_number) AS disputed_invoices,
+    ROUND(
+        (COUNT(invoice_number) * 100) / (SUM(COUNT(invoice_number)) OVER () )
+    , 2) AS percentage_disputes_lost,
+    SUM(invoice_amount) AS revenue_lost,
+    ROUND(
+        (SUM(invoice_amount) * 100) / (SUM(SUM(invoice_amount)) OVER () )
+    , 2) AS percentage_revenue_lost
+FROM
+    invoices
+WHERE
+    invoice_status = 'Disputed' AND
+    invoice_dispute_resolution = 'In favor of Customer'
+GROUP BY
+    country
+ORDER BY
+    3 DESC;
+
+--
+-- From the above results, it appears that the processing time does not
+-- have a direct relation with the lost disputes, particularly with
+-- France.
+--
+-- Also, it is clear that for France alone, the high number of disputed
+-- invoices should be a concern.
+--
+
+/* Distribution summary for France */
+SELECT
+    COUNT(
+        CASE
+            WHEN invoice_dispute_resolution = 'In favor of Customer' 
+                THEN invoice_number
+        END
+    ) AS lost,
+    SUM(
+        CASE
+            WHEN invoice_dispute_resolution = 'In favor of Customer' 
+                THEN invoice_amount
+            ELSE 0
+        END
+    ) AS lost_amount,
+    COUNT(
+        CASE
+            WHEN invoice_status = 'Accepted'
+                THEN invoice_number
+        END
+    ) AS not_disputed,
+    SUM(
+        CASE
+            WHEN invoice_status = 'Accepted'
+                THEN invoice_amount
+            ELSE 0
+        END
+    ) AS not_disputed_amount,
+    COUNT(
+        CASE
+            WHEN invoice_dispute_resolution = 'In favor of Yellevate'
+            AND invoice_status = 'Disputed'
+                THEN invoice_number
+        END
+    ) AS won,
+    SUM(
+        CASE
+            WHEN invoice_dispute_resolution = 'In favor of Yellevate'
+            AND invoice_status = 'Disputed'
+                THEN invoice_amount
+            ELSE 0
+        END
+    ) AS won_amount,
+    COUNT(invoice_number) AS total,
+    SUM(invoice_amount) AS total_amount
+FROM
+    invoices
+WHERE
+    country = 'France';
+
+
+--
+-- We focus on France's top customers contributing to the high
+-- number of lost disputes.
+--
+
+/* Distribution details per client */
+SELECT
+    customer_id,
+    COUNT(
+        CASE
+            WHEN invoice_dispute_resolution = 'In favor of Customer' 
+                THEN invoice_number
+        END
+    ) AS lost,
+    SUM(
+        CASE
+            WHEN invoice_dispute_resolution = 'In favor of Customer' 
+                THEN invoice_amount
+            ELSE 0
+        END
+    ) AS lost_amount,
+    COUNT(
+        CASE
+            WHEN invoice_status = 'Accepted'
+                THEN invoice_number
+        END
+    ) AS not_disputed,
+    SUM(
+        CASE
+            WHEN invoice_status = 'Accepted'
+                THEN invoice_amount
+            ELSE 0
+        END
+    ) AS not_disputed_amount,
+    COUNT(
+        CASE
+            WHEN invoice_dispute_resolution = 'In favor of Yellevate'
+            AND invoice_status = 'Disputed'
+                THEN invoice_number
+        END
+    ) AS won,
+    SUM(
+        CASE
+            WHEN invoice_dispute_resolution = 'In favor of Yellevate'
+            AND invoice_status = 'Disputed'
+                THEN invoice_amount
+            ELSE 0
+        END
+    ) AS won_amount
+FROM
+    invoices
+WHERE
+    country = 'France'
+GROUP BY
+    customer_id
+ORDER BY
+    2 DESC;
+
+
+--
+-- From the previous results, we can get the 5 customers from France
+-- that contributes to the high number of disputes lost.
+--
+
+WITH customers_france AS (
+    SELECT
+        customer_id,
+        COUNT(
+            CASE
+                WHEN invoice_dispute_resolution = 'In favor of Customer' 
+                    THEN invoice_number
+            END
+        ) AS lost,
+        COUNT(
+            CASE
+                WHEN invoice_status = 'Accepted'
+                    THEN invoice_number
+            END
+        ) AS not_disputed,
+        COUNT(
+            CASE
+                WHEN invoice_dispute_resolution = 'In favor of Yellevate'
+                AND invoice_status = 'Disputed'
+                    THEN invoice_number
+            END
+        ) AS won,
+        SUM(
+            CASE
+                WHEN invoice_dispute_resolution = 'In favor of Customer' 
+                    THEN invoice_amount
+                ELSE 0
+            END
+        ) AS lost_amount,
+        SUM(
+            CASE
+                WHEN invoice_status = 'Accepted'
+                    THEN invoice_amount
+                ELSE 0
+            END
+        ) AS not_disputed_amount,
+        SUM(
+            CASE
+                WHEN invoice_dispute_resolution = 'In favor of Yellevate'
+                AND invoice_status = 'Disputed'
+                    THEN invoice_amount
+                ELSE 0
+            END
+        ) AS won_amount
+    FROM
+        invoices
+    WHERE
+        country = 'France'
+    GROUP BY
+        customer_id
+),
+customers_france_classified AS (
+    SELECT
+        CASE
+            WHEN customer_id IN (
+                '3448-OWJOT',
+                '9725-EZTEJ',
+                '7600-OISKG',
+                '9771-QTLGZ',
+                '4632-QZOKX'
+            ) THEN true
+            ELSE false
+        END AS is_problematic,
+        SUM(lost) AS disputed_invoices,
+        ROUND(
+            (SUM(lost) * 100) / (SUM(SUM(lost)) OVER () )
+        , 2) AS percentage_disputes_lost,
+        SUM(lost_amount) AS revenue_lost,
+        ROUND(
+            (SUM(lost_amount) * 100) / (SUM(SUM(lost_amount)) OVER () )
+        , 2) AS percentage_revenue_lost
+    FROM
+        customers_france
+    GROUP BY 1
+)
+SELECT
+    disputed_invoices,
+    percentage_disputes_lost,
+    revenue_lost,
+    percentage_revenue_lost
+FROM
+    customers_france_classified
+WHERE
+    is_problematic = true;
+
+
+/*--------------------------------------------
+    INSIGHTS AND RECOMMENDATIONS
+*/--------------------------------------------
+--
+-- We can see that the top 5 clients of France alone contributed
+-- to the majority of the lost disputes amounting to 58% of
+-- the total revenue lost.
+--
+-- Apart from having the high number of disputes, the same set of clients
+-- have very low number of non-disputed invoices. We can concur that there
+-- could be an over-utilization of the dispute policy.
+--
+-- The recommendations will be:
+-- 1) To increase the company's protection against over utilization of 
+-- dispute facility
+-- 2) To decrease the chances of dispute facility over-use by enforcing
+-- a strict adherence to penalties for abusive dispute filing
+--
+/*--------------------------------------------*/
