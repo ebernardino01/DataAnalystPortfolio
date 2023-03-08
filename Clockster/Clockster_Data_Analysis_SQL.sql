@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS attendance_raw (
     "time" TIME,
     timezone VARCHAR(10),
     "case" VARCHAR(10),
-    source VARCHAR(10)
+    "source" VARCHAR(10)
 );
 
 /* 
@@ -127,9 +127,11 @@ CREATE TABLE IF NOT EXISTS attendance AS (
         "time",
         timezone,
         "case",
-        INITCAP(source) AS source
+        INITCAP("source") AS "source"
     FROM
         attendance_raw
+    ORDER BY
+        user_id, "date"
 );
 
 
@@ -154,6 +156,8 @@ CREATE TABLE IF NOT EXISTS users AS (
         created_at
     FROM
         users_raw
+    ORDER BY
+        user_id
 );
 
 
@@ -179,6 +183,8 @@ CREATE TABLE IF NOT EXISTS payroll AS (
         created_at
     FROM
         payroll_raw
+    ORDER BY
+        user_id
 );
 
 
@@ -207,7 +213,7 @@ CREATE TABLE IF NOT EXISTS leave_requests AS (
     FROM
         leave_requests_simplified
     ORDER BY
-        1, 4
+        user_id, "date"
 );
 
 
@@ -256,5 +262,370 @@ CREATE TABLE IF NOT EXISTS schedules AS (
     FROM
         schedules_2nd_level
     ORDER BY
-        1, 3
+        user_id, "date"
 );
+
+
+/* Drop the raw tables */
+DROP TABLE IF EXISTS attendance_raw;
+DROP TABLE IF EXISTS users_raw;
+DROP TABLE IF EXISTS payroll_raw;
+DROP TABLE IF EXISTS schedules_raw;
+DROP TABLE IF EXISTS leave_requests_raw;
+
+
+/*--------------------------------------------
+    DATA EXPLORATION AND ANALYSIS
+*/--------------------------------------------
+
+/* Summary of tardiness by employee */
+WITH attendance_merged AS (
+    SELECT 
+        att.user_id,
+        att."location",
+        u.gender,
+        u.date_hire,
+        u.date_leave,
+        u."position" AS "position",
+        u.department,
+        att."date" AS log_date,
+        att."time" AS log_time,
+        att.timezone AS log_timezone,
+        att."case",
+        att."source", 
+        sch."type",
+        sch.time_start,
+        sch.time_end,
+        sch.timezone AS schedule_timezone,
+        sch.time_planned,
+        sch.break_time
+    FROM
+        attendance att
+    INNER JOIN
+        schedules sch
+        ON att.user_id = sch.user_id
+        AND att."date" = sch."date"
+    INNER JOIN
+        users u
+        ON u.user_id = att.user_id
+        AND u.user_id = sch.user_id
+),
+attendance_merged_with_diffs AS (
+    SELECT
+        user_id,
+        "location",
+        gender,
+        date_hire,
+        date_leave,
+        "position",
+        department,
+        log_date,
+        log_time,
+        log_timezone,
+        "case",
+        "source", 
+        "type",
+        time_start,
+        time_end,
+        time_planned,
+        break_time,
+        CASE
+            WHEN "case" = 'IN'
+                THEN date_part('hour', log_time - time_start)
+            ELSE 0
+        END AS login_diff_hours,
+        CASE
+            WHEN "case" = 'IN'
+                THEN date_part('hour', log_time - time_start) * 60 + 
+                     date_part('minute', log_time - time_start)
+            ELSE 0
+        END AS login_diff_minutes,
+        CASE
+            WHEN "case" = 'OUT'
+                THEN date_part('hour', log_time - time_end)
+            ELSE 0
+        END AS logout_diff_hours,
+        CASE
+            WHEN "case" = 'OUT'
+                THEN date_part('hour', log_time - time_end) * 60 + 
+                     date_part('minute', log_time - time_end)
+            ELSE 0
+        END AS logout_diff_minutes
+    FROM
+        attendance_merged
+),
+attendance_merged_with_diffs_classified AS (
+    SELECT
+        user_id,
+        "location",
+        gender,
+        date_hire,
+        date_leave,
+        "position",
+        department,
+        log_date,
+        log_time,
+        log_timezone,
+        "case",
+        "source", 
+        "type",
+        time_start,
+        time_end,
+        time_planned,
+        break_time,
+        login_diff_minutes,
+        logout_diff_minutes,
+        CASE
+            WHEN (login_diff_minutes > 10 AND
+                  login_diff_minutes <= 120) THEN 'Yes'
+            ELSE 'No'
+        END AS is_tardy
+    FROM 
+    attendance_merged_with_diffs
+)
+SELECT
+    user_id,
+    "position",
+    COUNT(
+        CASE
+            WHEN is_tardy = 'Yes'
+                THEN is_tardy
+            END
+    ) AS tardiness_count
+FROM
+    attendance_merged_with_diffs_classified
+GROUP BY
+    user_id,
+    "position"
+ORDER BY
+    3 DESC;
+
+
+/* Summary of tardiness by department */
+WITH attendance_merged AS (
+    SELECT 
+        att.user_id,
+        att."location",
+        u.gender,
+        u.date_hire,
+        u.date_leave,
+        u."position" AS "position",
+        u.department,
+        att."date" AS log_date,
+        att."time" AS log_time,
+        att.timezone AS log_timezone,
+        att."case",
+        att."source", 
+        sch."type",
+        sch.time_start,
+        sch.time_end,
+        sch.timezone AS schedule_timezone,
+        sch.time_planned,
+        sch.break_time
+    FROM
+        attendance att
+    INNER JOIN
+        schedules sch
+        ON att.user_id = sch.user_id
+        AND att."date" = sch."date"
+    INNER JOIN
+        users u
+        ON u.user_id = att.user_id
+        AND u.user_id = sch.user_id
+),
+attendance_merged_with_diffs AS (
+    SELECT
+        user_id,
+        "location",
+        gender,
+        date_hire,
+        date_leave,
+        "position",
+        department,
+        log_date,
+        log_time,
+        log_timezone,
+        "case",
+        "source", 
+        "type",
+        time_start,
+        time_end,
+        time_planned,
+        break_time,
+        CASE
+            WHEN "case" = 'IN'
+                THEN date_part('hour', log_time - time_start)
+            ELSE 0
+        END AS login_diff_hours,
+        CASE
+            WHEN "case" = 'IN'
+                THEN date_part('hour', log_time - time_start) * 60 + 
+                     date_part('minute', log_time - time_start)
+            ELSE 0
+        END AS login_diff_minutes,
+        CASE
+            WHEN "case" = 'OUT'
+                THEN date_part('hour', log_time - time_end)
+            ELSE 0
+        END AS logout_diff_hours,
+        CASE
+            WHEN "case" = 'OUT'
+                THEN date_part('hour', log_time - time_end) * 60 + 
+                     date_part('minute', log_time - time_end)
+            ELSE 0
+        END AS logout_diff_minutes
+    FROM
+        attendance_merged
+),
+attendance_merged_with_diffs_classified AS (
+    SELECT
+        user_id,
+        "location",
+        gender,
+        date_hire,
+        date_leave,
+        "position",
+        department,
+        log_date,
+        log_time,
+        log_timezone,
+        "case",
+        "source", 
+        "type",
+        time_start,
+        time_end,
+        time_planned,
+        break_time,
+        login_diff_minutes,
+        logout_diff_minutes,
+        CASE
+            WHEN (login_diff_minutes > 10 AND
+                  login_diff_minutes <= 120) THEN 'Yes'
+            ELSE 'No'
+        END AS is_tardy
+    FROM 
+    attendance_merged_with_diffs
+)
+SELECT
+    department,
+    COUNT(
+        CASE
+            WHEN is_tardy = 'Yes'
+                THEN is_tardy
+            END
+    ) AS tardiness_count
+FROM
+    attendance_merged_with_diffs_classified
+GROUP BY
+    department
+ORDER BY
+    2 DESC;
+
+
+/* Summary of leave counts by weekday */
+WITH leave_counts_by_day AS (
+    SELECT
+        EXTRACT(ISODOW FROM "date") AS dow,
+        TO_CHAR("date", 'Dy') AS leave_day,
+        COUNT(leave_type) AS leave_count
+    FROM
+        leave_requests
+    GROUP BY
+        1, 2
+    ORDER BY
+        1
+)
+SELECT
+    leave_day AS weekday,
+    leave_count 
+FROM
+    leave_counts_by_day;
+
+
+/* Summary of leave counts by month */
+WITH leave_counts_by_month AS (
+    SELECT
+        EXTRACT(MONTH FROM "date") AS month_order,
+        TO_CHAR("date", 'Mon') AS leave_month,
+        COUNT(leave_type) AS leave_count
+    FROM
+        leave_requests
+    GROUP BY
+        1, 2
+    ORDER BY
+        1
+)
+SELECT
+    leave_month AS "month",
+    leave_count 
+FROM
+    leave_counts_by_month;
+
+
+/* Summary of leave counts by employee */
+WITH leave_counts_by_emp AS (
+    SELECT 
+        lr.user_id,
+        u.gender,
+        u.date_hire,
+        u.date_leave,
+        u."position",
+        u.department,
+        leave_type,
+        COUNT(leave_type) AS leave_count
+    FROM
+        leave_requests lr
+    JOIN
+        users u
+        ON lr.user_id = u.user_id
+    WHERE
+        status = 'Accepted'
+    GROUP BY
+        1, 2, 3, 4
+    ORDER BY
+        1, 5 DESC
+)
+SELECT
+    user_id,
+    "position",
+    SUM(leave_count) AS leave_count
+FROM
+    leave_counts_by_emp
+GROUP BY
+    1, 2
+ORDER BY
+    3 DESC;
+
+
+/* Summary of leave counts by department */
+WITH leave_counts_by_emp AS (
+    SELECT 
+        lr.user_id,
+        u.gender,
+        u.date_hire,
+        u.date_leave,
+        u."position",
+        u.department,
+        leave_type,
+        COUNT(leave_type) AS leave_count
+    FROM
+        leave_requests lr
+    JOIN
+        users u
+        ON lr.user_id = u.user_id
+    WHERE
+        status = 'Accepted'
+    GROUP BY
+        1, 2, 3, 4
+    ORDER BY
+        1, 5 DESC
+)
+SELECT
+    department,
+    SUM(leave_count) AS leave_count
+FROM
+    leave_counts_by_emp
+GROUP BY
+    department
+ORDER BY
+    2 DESC;
