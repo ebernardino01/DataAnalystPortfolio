@@ -122,7 +122,7 @@ DROP TABLE IF EXISTS attendance;
 CREATE TABLE IF NOT EXISTS attendance AS (
     SELECT DISTINCT
         user_id,
-        "location",
+        COALESCE("location", 'None') AS "location",
         "date",
         "time",
         timezone,
@@ -149,10 +149,10 @@ CREATE TABLE IF NOT EXISTS users AS (
         date_birth,
         date_hire,
         date_leave,
-        employment,
-        position,
-        "location",
-        department,
+        REPLACE(INITCAP(COALESCE(employment, 'full_time')), '_', ' ') AS employment,
+        COALESCE("position", 'None') AS "position",
+        COALESCE("location", 'None') AS "location",
+        COALESCE(department, 'None') AS department,
         created_at
     FROM
         users_raw
@@ -173,12 +173,12 @@ CREATE TABLE IF NOT EXISTS payroll AS (
         user_id,
         date_start,
         date_end,
-        ctc,
-        net_pay,
-        gross_pay,
+        COALESCE(ctc, 0) AS ctc,
+        COALESCE(net_pay, 0) AS net_pay,
+        COALESCE(gross_pay, 0) AS gross_pay,
         data_salary_basic_rate,
         INITCAP(data_salary_basic_type) AS data_salary_basic_type,
-        currency,
+        COALESCE(currency, 'None') AS currency,
         INITCAP(status) AS status,
         created_at
     FROM
@@ -201,12 +201,14 @@ CREATE TABLE IF NOT EXISTS leave_requests AS (
         SELECT
             user_id,
             INITCAP("type") AS "type",
-            INITCAP(leave_type) AS leave_type,
+            REPLACE(INITCAP(leave_type), '_', ' ') AS leave_type,
             JSONB_ARRAY_ELEMENTS_TEXT(dates)::date AS "date",
             INITCAP(status) AS status,
             created_at
         FROM
             leave_requests_raw
+        WHERE
+            user_id IS NOT NULL
     )
     SELECT
         DISTINCT *
@@ -236,9 +238,9 @@ CREATE TABLE IF NOT EXISTS schedules AS (
             time_start,
             time_end,
             timezone,
-            time_planned,
-            break_time,
-            INITCAP(leave_type) AS leave_type,
+            COALESCE(time_planned, 0) AS time_planned,
+            COALESCE(break_time, 0) AS break_time,
+            REPLACE(INITCAP(COALESCE(leave_type, 'None')), '_', ' ') AS leave_type,
             UNNEST(user_id) AS user_id
         FROM
             schedules_raw
@@ -309,6 +311,8 @@ WITH attendance_merged AS (
         users u
         ON u.user_id = att.user_id
         AND u.user_id = sch.user_id
+    WHERE
+        sch."type" = 'Work'
 ),
 attendance_merged_with_diffs AS (
     SELECT
@@ -373,7 +377,9 @@ attendance_merged_with_diffs_classified AS (
         time_end,
         time_planned,
         break_time,
+        login_diff_hours,
         login_diff_minutes,
+        logout_diff_hours,
         logout_diff_minutes,
         CASE
             WHEN (login_diff_minutes > 10 AND
@@ -386,6 +392,7 @@ attendance_merged_with_diffs_classified AS (
 SELECT
     user_id,
     "position",
+    department,
     COUNT(
         CASE
             WHEN is_tardy = 'Yes'
@@ -396,9 +403,10 @@ FROM
     attendance_merged_with_diffs_classified
 GROUP BY
     user_id,
-    "position"
+    "position",
+    department
 ORDER BY
-    3 DESC;
+    4 DESC;
 
 
 /* Summary of tardiness by department */
@@ -432,6 +440,8 @@ WITH attendance_merged AS (
         users u
         ON u.user_id = att.user_id
         AND u.user_id = sch.user_id
+    WHERE
+        sch."type" = 'Work'
 ),
 attendance_merged_with_diffs AS (
     SELECT
@@ -543,23 +553,65 @@ FROM
 
 
 /* Summary of leave counts by month */
-WITH leave_counts_by_month AS (
+WITH min_max_dates AS (
     SELECT
-        EXTRACT(MONTH FROM "date") AS month_order,
-        TO_CHAR("date", 'Mon') AS leave_month,
-        COUNT(leave_type) AS leave_count
+        DATE_TRUNC('month', MIN("date")) AS min, 
+        DATE_TRUNC('month', MAX("date")) AS max
     FROM
         leave_requests
+),
+months_from_dates as (
+    SELECT
+        TO_CHAR(GENERATE_SERIES(min, max, '1 month'), 'Mon') AS "month",
+        0 AS leave_count
+    FROM
+        min_max_dates
+),
+leave_counts_by_month AS (
+    SELECT
+        --EXTRACT(MONTH FROM lr."date") AS month_order,
+        TO_CHAR(lr."date", 'Mon') AS "month",
+        COUNT(lr.leave_type) AS leave_count
+    FROM
+        leave_requests lr
+    JOIN
+        schedules sch
+        ON lr.user_id = sch.user_id
+        AND lr."type" = sch."type"
+        AND lr."date" = sch."date"
+    WHERE
+        lr."type" = 'Leave'
+        AND lr.leave_type <> 'Day Off'
+        AND lr.status = 'Accepted'
     GROUP BY
-        1, 2
-    ORDER BY
         1
+),
+leave_counts_by_month_joined AS (
+    SELECT
+        "month",
+        leave_count 
+    FROM
+        leave_counts_by_month lcbm
+    UNION ALL
+    SELECT
+        *
+    FROM
+        months_from_dates mfd
+    WHERE NOT EXISTS (
+        SELECT
+            1
+        FROM
+            leave_counts_by_month lcbm
+        WHERE
+            lcbm."month" = mfd."month"
+    )
 )
 SELECT
-    leave_month AS "month",
-    leave_count 
+    *
 FROM
-    leave_counts_by_month;
+    leave_counts_by_month_joined
+ORDER BY
+    EXTRACT(MONTH FROM TO_DATE("month", 'Mon'));
 
 
 /* Summary of leave counts by employee */
@@ -567,34 +619,43 @@ WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
         u.gender,
-        u.date_hire,
-        u.date_leave,
+        u.date_hire AS date_hired,
+        u.date_leave AS date_left,
         u."position",
         u.department,
-        leave_type,
-        COUNT(leave_type) AS leave_count
+        lr."date" AS leave_date,
+        lr.leave_type,
+        COUNT(lr.leave_type) AS leave_count
     FROM
         leave_requests lr
+    JOIN
+        schedules sch
+        ON lr.user_id = sch.user_id
+        AND lr."type" = sch."type"
+        AND lr."date" = sch."date"
     JOIN
         users u
         ON lr.user_id = u.user_id
     WHERE
-        status = 'Accepted'
+        lr."type" = 'Leave'
+        AND lr.leave_type <> 'Day Off'
+        AND lr.status = 'Accepted'
     GROUP BY
-        1, 2, 3, 4
+        1, 2, 3, 4, 5, 6, 7, 8
     ORDER BY
-        1, 5 DESC
+        1, 9 DESC
 )
 SELECT
     user_id,
     "position",
+    department,
     SUM(leave_count) AS leave_count
 FROM
     leave_counts_by_emp
 GROUP BY
-    1, 2
+    1, 2, 3
 ORDER BY
-    3 DESC;
+    4 DESC;
 
 
 /* Summary of leave counts by department */
@@ -602,23 +663,31 @@ WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
         u.gender,
-        u.date_hire,
-        u.date_leave,
+        u.date_hire AS date_hired,
+        u.date_leave AS date_left,
         u."position",
         u.department,
-        leave_type,
-        COUNT(leave_type) AS leave_count
+        lr."date" AS leave_date,
+        lr.leave_type,
+        COUNT(lr.leave_type) AS leave_count
     FROM
         leave_requests lr
+    JOIN
+        schedules sch
+        ON lr.user_id = sch.user_id
+        AND lr."type" = sch."type"
+        AND lr."date" = sch."date"
     JOIN
         users u
         ON lr.user_id = u.user_id
     WHERE
-        status = 'Accepted'
+        lr."type" = 'Leave'
+        AND lr.leave_type <> 'Day Off'
+        AND lr.status = 'Accepted'
     GROUP BY
-        1, 2, 3, 4
+        1, 2, 3, 4, 5, 6, 7, 8
     ORDER BY
-        1, 5 DESC
+        1, 9 DESC
 )
 SELECT
     department,
