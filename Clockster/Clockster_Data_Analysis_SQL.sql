@@ -120,18 +120,52 @@ CREATE TABLE IF NOT EXISTS leave_requests_raw (
 */
 DROP TABLE IF EXISTS attendance;
 CREATE TABLE IF NOT EXISTS attendance AS (
-    SELECT DISTINCT
+    WITH attendance_cleaned AS (
+        SELECT DISTINCT
+            user_id,
+            COALESCE("location", 'None') AS "location",
+            "date",
+            "time",
+            timezone,
+            "case",
+            INITCAP("source") AS "source"
+        FROM
+            attendance_raw
+        ORDER BY
+            user_id,
+            "date"
+    )
+    SELECT
         user_id,
-        COALESCE("location", 'None') AS "location",
+        "location",
         "date",
-        "time",
+        MIN(
+            CASE
+                WHEN "case" = 'IN'
+                    THEN "time"
+            END
+        ) AS login_time, 
+        MAX(
+            CASE
+                WHEN "case" = 'OUT'
+                    THEN "time"
+            END
+        ) AS logout_time,
         timezone,
-        "case",
-        INITCAP("source") AS "source"
+        "source"
     FROM
-        attendance_raw
+        attendance_cleaned
+    GROUP BY
+        user_id,
+        "location",
+        "date",
+        timezone,
+        "source"
     ORDER BY
-        user_id, "date"
+        user_id,
+        "date",
+        login_time,
+        logout_time
 );
 
 
@@ -215,7 +249,8 @@ CREATE TABLE IF NOT EXISTS leave_requests AS (
     FROM
         leave_requests_simplified
     ORDER BY
-        user_id, "date"
+        user_id,
+        "date"
 );
 
 
@@ -264,7 +299,8 @@ CREATE TABLE IF NOT EXISTS schedules AS (
     FROM
         schedules_2nd_level
     ORDER BY
-        user_id, "date"
+        user_id,
+        "date"
 );
 
 
@@ -282,19 +318,17 @@ DROP TABLE IF EXISTS leave_requests_raw;
 
 /* Summary of tardiness by employee */
 WITH attendance_merged AS (
-    SELECT 
+    SELECT
         att.user_id,
-        att."location",
         u.gender,
         u.date_hire,
         u.date_leave,
         u."position" AS "position",
         u.department,
         att."date" AS log_date,
-        att."time" AS log_time,
+        MIN(att.login_time) AS login_time,
+        MAX(att.logout_time) AS logout_time,
         att.timezone AS log_timezone,
-        att."case",
-        att."source", 
         sch."type",
         sch.time_start,
         sch.time_end,
@@ -313,134 +347,25 @@ WITH attendance_merged AS (
         AND u.user_id = sch.user_id
     WHERE
         sch."type" = 'Work'
-),
-attendance_merged_in_out_mapping AS (
-    SELECT 
-        login.user_id,
-        login."location",
-        login.gender,
-        login.date_hire,
-        login.date_leave,
-        login."position",
-        login.department,
-        login.log_date,
-        login.log_time AS login_time,
-        logout.log_time AS logout_time,
-        login.time_start,
-        login.time_end,
-        login.time_planned,
-        login.break_time,
-        login.log_timezone,
-        login."source",
-        login."type"
-    FROM (
-        SELECT
-            user_id,
-            "location",
-            gender,
-            date_hire,
-            date_leave,
-            "position",
-            department,
-            log_date,
-            log_timezone,
-            "case",
-            "source", 
-            "type",
-            time_start,
-            time_end,
-            time_planned,
-            break_time,
-            MIN(log_time) AS log_time
-        FROM 
-            attendance_merged
-        WHERE
-            "case" = 'IN'
-        GROUP BY 
-            user_id,
-            "location",
-            gender,
-            date_hire,
-            date_leave,
-            "position",
-            department,
-            log_date,
-            log_timezone,
-            "case",
-            "source", 
-            "type",
-            time_start,
-            time_end,
-            time_planned,
-            break_time
-    ) AS login
-    JOIN (
-        SELECT 
-            user_id,
-            "location",
-            gender,
-            date_hire,
-            date_leave,
-            "position",
-            department,
-            log_date,
-            log_timezone,
-            "case",
-            "source", 
-            "type",
-            time_start,
-            time_end,
-            time_planned,
-            break_time,
-            MAX(log_time) AS log_time
-        FROM 
-            attendance_merged
-        WHERE
-            "case" = 'OUT'
-        GROUP BY 
-            user_id,
-            "location",
-            gender,
-            date_hire,
-            date_leave,
-            "position",
-            department,
-            log_date,
-            log_timezone,
-            "case",
-            "source", 
-            "type",
-            time_start,
-            time_end,
-            time_planned,
-            break_time,
-            "case"
-    ) AS logout
-    ON 
-        login.user_id = logout.user_id
-        AND login."location" = logout."location"
-        AND login.gender = logout.gender
-        AND login.date_hire = logout.date_hire
-        AND login.date_leave = logout.date_leave
-        AND login."position" = logout."position"
-        AND login.department = logout.department
-        AND login.log_date = logout.log_date
-        AND login."source" = logout."source"
-        AND login."type" = logout."type"
-        AND login.time_start = logout.time_start
-        AND login.time_end = logout.time_end
-        AND login.time_planned = logout.time_planned
-        AND login.break_time = logout.break_time
-        AND login.log_timezone = logout.log_timezone
-    ORDER BY
-        login.user_id,
-        login.log_date,
-        login.log_time
+    GROUP BY
+        att.user_id,
+        u.gender,
+        u.date_hire,
+        u.date_leave,
+        u."position",
+        u.department,
+        att."date",
+        att.timezone,
+        sch."type",
+        sch.time_start,
+        sch.time_end,
+        sch.timezone,
+        sch.time_planned,
+        sch.break_time
 ),
 attendance_merged_with_diffs AS (
     SELECT
         user_id,
-        "location",
         gender,
         date_hire,
         date_leave,
@@ -453,7 +378,6 @@ attendance_merged_with_diffs AS (
         time_end,
         time_planned,
         break_time,
-        "source", 
         "type",
         DATE_PART('hour', login_time - time_start) AS login_diff_hours,
         DATE_PART('hour', login_time - time_start) * 60 + 
@@ -462,12 +386,11 @@ attendance_merged_with_diffs AS (
         DATE_PART('hour', logout_time - time_end) * 60 + 
             DATE_PART('minute', logout_time - time_end) AS logout_diff_minutes
     FROM
-        attendance_merged_in_out_mapping
+        attendance_merged
 ),
 attendance_merged_with_diffs_classified AS (
     SELECT
         user_id,
-        "location",
         gender,
         date_hire,
         date_leave,
@@ -480,7 +403,6 @@ attendance_merged_with_diffs_classified AS (
         time_end,
         time_planned,
         break_time,
-        "source", 
         "type",
         login_diff_hours,
         login_diff_minutes,
@@ -516,19 +438,17 @@ ORDER BY
 
 /* Summary of tardiness by department */
 WITH attendance_merged AS (
-    SELECT 
+    SELECT
         att.user_id,
-        att."location",
         u.gender,
         u.date_hire,
         u.date_leave,
         u."position" AS "position",
         u.department,
         att."date" AS log_date,
-        att."time" AS log_time,
+        MIN(att.login_time) AS login_time,
+        MAX(att.logout_time) AS logout_time,
         att.timezone AS log_timezone,
-        att."case",
-        att."source", 
         sch."type",
         sch.time_start,
         sch.time_end,
@@ -547,134 +467,25 @@ WITH attendance_merged AS (
         AND u.user_id = sch.user_id
     WHERE
         sch."type" = 'Work'
-),
-attendance_merged_in_out_mapping AS (
-    SELECT 
-        login.user_id,
-        login."location",
-        login.gender,
-        login.date_hire,
-        login.date_leave,
-        login."position",
-        login.department,
-        login.log_date,
-        login.log_time AS login_time,
-        logout.log_time AS logout_time,
-        login.time_start,
-        login.time_end,
-        login.time_planned,
-        login.break_time,
-        login.log_timezone,
-        login."source",
-        login."type"
-    FROM (
-        SELECT
-            user_id,
-            "location",
-            gender,
-            date_hire,
-            date_leave,
-            "position",
-            department,
-            log_date,
-            log_timezone,
-            "case",
-            "source", 
-            "type",
-            time_start,
-            time_end,
-            time_planned,
-            break_time,
-            MIN(log_time) AS log_time
-        FROM 
-            attendance_merged
-        WHERE
-            "case" = 'IN'
-        GROUP BY 
-            user_id,
-            "location",
-            gender,
-            date_hire,
-            date_leave,
-            "position",
-            department,
-            log_date,
-            log_timezone,
-            "case",
-            "source", 
-            "type",
-            time_start,
-            time_end,
-            time_planned,
-            break_time
-    ) AS login
-    JOIN (
-        SELECT 
-            user_id,
-            "location",
-            gender,
-            date_hire,
-            date_leave,
-            "position",
-            department,
-            log_date,
-            log_timezone,
-            "case",
-            "source", 
-            "type",
-            time_start,
-            time_end,
-            time_planned,
-            break_time,
-            MAX(log_time) AS log_time
-        FROM 
-            attendance_merged
-        WHERE
-            "case" = 'OUT'
-        GROUP BY 
-            user_id,
-            "location",
-            gender,
-            date_hire,
-            date_leave,
-            "position",
-            department,
-            log_date,
-            log_timezone,
-            "case",
-            "source", 
-            "type",
-            time_start,
-            time_end,
-            time_planned,
-            break_time,
-            "case"
-    ) AS logout
-    ON 
-        login.user_id = logout.user_id
-        AND login."location" = logout."location"
-        AND login.gender = logout.gender
-        AND login.date_hire = logout.date_hire
-        AND login.date_leave = logout.date_leave
-        AND login."position" = logout."position"
-        AND login.department = logout.department
-        AND login.log_date = logout.log_date
-        AND login."source" = logout."source"
-        AND login."type" = logout."type"
-        AND login.time_start = logout.time_start
-        AND login.time_end = logout.time_end
-        AND login.time_planned = logout.time_planned
-        AND login.break_time = logout.break_time
-        AND login.log_timezone = logout.log_timezone
-    ORDER BY
-        login.user_id,
-        login.log_date,
-        login.log_time
+    GROUP BY
+        att.user_id,
+        u.gender,
+        u.date_hire,
+        u.date_leave,
+        u."position",
+        u.department,
+        att."date",
+        att.timezone,
+        sch."type",
+        sch.time_start,
+        sch.time_end,
+        sch.timezone,
+        sch.time_planned,
+        sch.break_time
 ),
 attendance_merged_with_diffs AS (
     SELECT
         user_id,
-        "location",
         gender,
         date_hire,
         date_leave,
@@ -687,7 +498,6 @@ attendance_merged_with_diffs AS (
         time_end,
         time_planned,
         break_time,
-        "source", 
         "type",
         DATE_PART('hour', login_time - time_start) AS login_diff_hours,
         DATE_PART('hour', login_time - time_start) * 60 + 
@@ -696,12 +506,11 @@ attendance_merged_with_diffs AS (
         DATE_PART('hour', logout_time - time_end) * 60 + 
             DATE_PART('minute', logout_time - time_end) AS logout_diff_minutes
     FROM
-        attendance_merged_in_out_mapping
+        attendance_merged
 ),
 attendance_merged_with_diffs_classified AS (
     SELECT
         user_id,
-        "location",
         gender,
         date_hire,
         date_leave,
@@ -714,7 +523,6 @@ attendance_merged_with_diffs_classified AS (
         time_end,
         time_planned,
         break_time,
-        "source", 
         "type",
         login_diff_hours,
         login_diff_minutes,
