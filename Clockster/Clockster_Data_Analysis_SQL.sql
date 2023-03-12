@@ -5,7 +5,7 @@
     3. Data transformations
 */--------------------------------------------
 
-/* 
+/*
     Create attendance_raw table
     Once table is created, import data from the CSV file
 */
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS attendance_raw (
     "source" VARCHAR(10)
 );
 
-/* 
+/*
     Create users_raw table
     Once table is created, import data from the CSV file
 */
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS users_raw (
     created_at TIMESTAMP
 );
 
-/* 
+/*
     Create payroll_raw table
     Once table is created, import data from the CSV file
 */
@@ -63,8 +63,7 @@ CREATE TABLE IF NOT EXISTS payroll_raw (
     created_at TIMESTAMP
 );
 
-
-/* 
+/*
     Create schedules_raw table
     Once table is created, import data from the CSV file
 
@@ -86,7 +85,7 @@ CREATE TABLE IF NOT EXISTS schedules_raw (
     user_id BIGINT[]
 );
 
-/* 
+/*
     Create leave_requests_raw table
     Once table is created, import data from the CSV file
 
@@ -111,12 +110,13 @@ CREATE TABLE IF NOT EXISTS leave_requests_raw (
 );
 
 
-
-/* 
+/*
     Create new cleaned table attendance:
-    - Exclude empty columns
-    - Remove duplicates
-    - Standardize column values
+    - 1st level: Exclude empty columns, remove duplicates
+                 and standardize column values
+    - 2nd level: Reclassify rows based from "case", group and
+                 join to obtain login and logout times for
+                 each row
 */
 DROP TABLE IF EXISTS attendance;
 CREATE TABLE IF NOT EXISTS attendance AS (
@@ -135,41 +135,67 @@ CREATE TABLE IF NOT EXISTS attendance AS (
             user_id,
             "date"
     )
-    SELECT
-        user_id,
-        "location",
-        "date",
-        MIN(
-            CASE
-                WHEN "case" = 'IN'
-                    THEN "time"
-            END
-        ) AS login_time, 
-        MAX(
-            CASE
-                WHEN "case" = 'OUT'
-                    THEN "time"
-            END
-        ) AS logout_time,
-        timezone,
-        "source"
-    FROM
-        attendance_cleaned
-    GROUP BY
-        user_id,
-        "location",
-        "date",
-        timezone,
-        "source"
+    SELECT 
+        login.user_id,
+        login."date" AS log_date,
+        login.location as login_location,
+        login."time" AS login_time,
+        login.timezone AS login_timezone,
+        login."source" AS login_source,
+        logout.location as logout_location,
+        logout."time" AS logout_time,
+        logout.timezone AS logout_timezone,
+        logout."source" AS logout_source
+    FROM (
+        SELECT 
+            user_id,
+            location,
+            "date",
+            timezone,
+            "source",
+            MIN("time") AS "time"
+        FROM 
+            attendance_cleaned
+        WHERE
+            "case" = 'IN'
+        GROUP BY 
+            user_id,
+            location,
+            "date",
+            timezone,
+            "source"
+    ) AS login
+    LEFT JOIN (
+        SELECT 
+            user_id,
+            location,
+            "date",
+            timezone,
+            "source",
+            MAX("time") AS "time"
+        FROM 
+            attendance_cleaned
+        WHERE
+            "case" = 'OUT'
+        GROUP BY 
+            user_id,
+            location,
+            "date",
+            timezone,
+            "source"
+    ) AS logout
+    ON 
+        login.user_id = logout.user_id
+        AND login."date" = logout."date"
+        AND login.location = logout.location
+        AND login.timezone = logout.timezone
+        AND login."source" = logout."source"
     ORDER BY
-        user_id,
-        "date",
-        login_time,
-        logout_time
+        1, 2, 4
 );
 
 
-/* 
+/*
     Create new cleaned table users:
     - Exclude empty columns
     - Remove duplicates
@@ -195,7 +221,7 @@ CREATE TABLE IF NOT EXISTS users AS (
 );
 
 
-/* 
+/*
     Create new cleaned table payroll:
     - Exclude empty columns
     - Remove duplicates
@@ -222,7 +248,7 @@ CREATE TABLE IF NOT EXISTS payroll AS (
 );
 
 
-/* 
+/*
     Create new cleaned table leave_requests:
     - Expand the "date" JSON array column into a set of date values
     - Exclude empty columns
@@ -254,7 +280,7 @@ CREATE TABLE IF NOT EXISTS leave_requests AS (
 );
 
 
-/* 
+/*
     Create new cleaned table schedules:
     - 1st level: Expand the "type" bigint array column into
                  a set of bigint values
@@ -325,10 +351,11 @@ WITH attendance_merged AS (
         u.date_leave,
         u."position" AS "position",
         u.department,
-        att."date" AS log_date,
+        att.log_date,
         MIN(att.login_time) AS login_time,
         MAX(att.logout_time) AS logout_time,
-        att.timezone AS log_timezone,
+        att.login_timezone,
+        att.logout_timezone,
         sch."type",
         sch.time_start,
         sch.time_end,
@@ -340,7 +367,7 @@ WITH attendance_merged AS (
     INNER JOIN
         schedules sch
         ON att.user_id = sch.user_id
-        AND att."date" = sch."date"
+        AND att.log_date = sch."date"
     INNER JOIN
         users u
         ON u.user_id = att.user_id
@@ -354,8 +381,9 @@ WITH attendance_merged AS (
         u.date_leave,
         u."position",
         u.department,
-        att."date",
-        att.timezone,
+        att.log_date,
+        att.login_timezone,
+        att.logout_timezone,
         sch."type",
         sch.time_start,
         sch.time_end,
@@ -410,11 +438,24 @@ attendance_merged_with_diffs_classified AS (
         logout_diff_minutes,
         CASE
             WHEN (login_diff_minutes > 10 AND
-                  login_diff_minutes <= 120) THEN 'Yes'
+                  login_diff_minutes <= 120)
+                THEN 'Yes'
             ELSE 'No'
-        END AS is_tardy
+        END AS is_tardy,
+        CASE
+            WHEN (logout_time IS NOT NULL AND
+                  (logout_diff_minutes < 0 AND
+                    logout_diff_minutes >= -180))
+                THEN 'Yes'
+            ELSE 'No'
+        END AS is_undertime,
+        CASE
+            WHEN logout_time IS NULL
+                THEN 'Yes'
+            ELSE 'No'
+        END AS no_logout
     FROM 
-    attendance_merged_with_diffs
+        attendance_merged_with_diffs
 )
 SELECT
     user_id,
@@ -445,10 +486,11 @@ WITH attendance_merged AS (
         u.date_leave,
         u."position" AS "position",
         u.department,
-        att."date" AS log_date,
+        att.log_date,
         MIN(att.login_time) AS login_time,
         MAX(att.logout_time) AS logout_time,
-        att.timezone AS log_timezone,
+        att.login_timezone,
+        att.logout_timezone,
         sch."type",
         sch.time_start,
         sch.time_end,
@@ -460,7 +502,7 @@ WITH attendance_merged AS (
     INNER JOIN
         schedules sch
         ON att.user_id = sch.user_id
-        AND att."date" = sch."date"
+        AND att.log_date = sch."date"
     INNER JOIN
         users u
         ON u.user_id = att.user_id
@@ -474,8 +516,9 @@ WITH attendance_merged AS (
         u.date_leave,
         u."position",
         u.department,
-        att."date",
-        att.timezone,
+        att.log_date,
+        att.login_timezone,
+        att.logout_timezone,
         sch."type",
         sch.time_start,
         sch.time_end,
@@ -530,9 +573,22 @@ attendance_merged_with_diffs_classified AS (
         logout_diff_minutes,
         CASE
             WHEN (login_diff_minutes > 10 AND
-                  login_diff_minutes <= 120) THEN 'Yes'
+                  login_diff_minutes <= 120)
+                THEN 'Yes'
             ELSE 'No'
-        END AS is_tardy
+        END AS is_tardy,
+        CASE
+            WHEN (logout_time IS NOT NULL AND
+                  (logout_diff_minutes < 0 AND
+                    logout_diff_minutes >= -180))
+                THEN 'Yes'
+            ELSE 'No'
+        END AS is_undertime,
+        CASE
+            WHEN logout_time IS NULL
+                THEN 'Yes'
+            ELSE 'No'
+        END AS no_logout
     FROM 
     attendance_merged_with_diffs
 )
@@ -550,6 +606,7 @@ GROUP BY
     department
 ORDER BY
     2 DESC;
+
 
 
 /* Summary of leave counts by weekday */
@@ -731,7 +788,6 @@ ORDER BY
     2 DESC;
 
 
-
 /* Summary of approved leave counts by gender */
 WITH leave_counts_by_emp AS (
     SELECT 
@@ -816,3 +872,128 @@ GROUP BY
     status
 ORDER BY
     2 DESC;
+
+
+
+/* Summary of log counts done on frontend by employee */
+WITH attendance_merged AS (
+    SELECT
+        att.user_id,
+        u.gender,
+        u.date_hire,
+        u.date_leave,
+        u."position" AS "position",
+        u.department,
+        att.log_date,
+        att.login_location,
+        att.login_time,
+        att.login_timezone,
+        att.login_source,
+        att.logout_location,
+        att.logout_time,
+        att.logout_timezone,
+        att.logout_source,
+        sch."type",
+        sch.time_start,
+        sch.time_end,
+        sch.timezone AS schedule_timezone,
+        sch.time_planned,
+        sch.break_time
+    FROM
+        attendance att
+    INNER JOIN
+        schedules sch
+        ON att.user_id = sch.user_id
+        AND att.log_date = sch."date"
+    INNER JOIN
+        users u
+        ON u.user_id = att.user_id
+        AND u.user_id = sch.user_id
+    WHERE
+        sch."type" = 'Work'
+)
+SELECT
+    user_id,
+    "position",
+    department,
+    COUNT(
+        CASE
+            WHEN login_source = 'Frontend'
+                THEN login_source
+            END
+    ) AS frontend_login_count,
+    COUNT(
+        CASE
+            WHEN logout_source = 'Frontend'
+                THEN logout_source
+            END
+    ) AS frontend_logout_count
+FROM
+    attendance_merged
+GROUP BY
+    user_id,
+    "position",
+    department
+ORDER BY
+    4 DESC,
+    5 DESC;
+
+
+/* Summary of log counts done on frontend by department */
+WITH attendance_merged AS (
+    SELECT
+        att.user_id,
+        u.gender,
+        u.date_hire,
+        u.date_leave,
+        u."position" AS "position",
+        u.department,
+        att.log_date,
+        att.login_location,
+        att.login_time,
+        att.login_timezone,
+        att.login_source,
+        att.logout_location,
+        att.logout_time,
+        att.logout_timezone,
+        att.logout_source,
+        sch."type",
+        sch.time_start,
+        sch.time_end,
+        sch.timezone AS schedule_timezone,
+        sch.time_planned,
+        sch.break_time
+    FROM
+        attendance att
+    INNER JOIN
+        schedules sch
+        ON att.user_id = sch.user_id
+        AND att.log_date = sch."date"
+    INNER JOIN
+        users u
+        ON u.user_id = att.user_id
+        AND u.user_id = sch.user_id
+    WHERE
+        sch."type" = 'Work'
+)
+SELECT
+    department,
+    COUNT(
+        CASE
+            WHEN login_source = 'Frontend'
+                THEN login_source
+            END
+    ) AS frontend_login_count,
+    COUNT(
+        CASE
+            WHEN logout_source = 'Frontend'
+                THEN logout_source
+            END
+    ) AS frontend_logout_count
+FROM
+    attendance_merged
+GROUP BY
+    department
+ORDER BY
+    2 DESC,
+    3 DESC;
