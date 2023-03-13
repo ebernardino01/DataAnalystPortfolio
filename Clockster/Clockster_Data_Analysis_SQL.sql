@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS attendance AS (
             user_id,
             "date"
     )
-    SELECT 
+    SELECT
         login.user_id,
         login."date" AS log_date,
         login.location as login_location,
@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS attendance AS (
         logout.timezone AS logout_timezone,
         logout."source" AS logout_source
     FROM (
-        SELECT 
+        SELECT
             user_id,
             location,
             "date",
@@ -166,7 +166,7 @@ CREATE TABLE IF NOT EXISTS attendance AS (
             "source"
     ) AS login
     LEFT JOIN (
-        SELECT 
+        SELECT
             user_id,
             location,
             "date",
@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS attendance AS (
             timezone,
             "source"
     ) AS logout
-    ON 
+    ON
         login.user_id = logout.user_id
         AND login."date" = logout."date"
         AND login.location = logout.location
@@ -324,6 +324,8 @@ CREATE TABLE IF NOT EXISTS schedules AS (
         DISTINCT *
     FROM
         schedules_2nd_level
+    --WHERE
+    --    "type" <> 'Fake'
     ORDER BY
         user_id,
         "date"
@@ -624,7 +626,7 @@ WITH leave_counts_by_day AS (
         AND lr."date" = sch."date"
     WHERE
         lr."type" = 'Leave'
-        AND lr.leave_type <> 'Day Off'
+        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1, 2
@@ -667,7 +669,7 @@ leave_counts_by_month AS (
         AND lr."date" = sch."date"
     WHERE
         lr."type" = 'Leave'
-        AND lr.leave_type <> 'Day Off'
+        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1
@@ -725,7 +727,7 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        AND lr.leave_type <> 'Day Off'
+        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
@@ -770,7 +772,7 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        AND lr.leave_type <> 'Day Off'
+        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
@@ -813,7 +815,7 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        AND lr.leave_type <> 'Day Off'
+        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
@@ -857,7 +859,7 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        AND lr.leave_type <> 'Day Off'
+        --AND lr.leave_type <> 'Day Off'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
     ORDER BY
