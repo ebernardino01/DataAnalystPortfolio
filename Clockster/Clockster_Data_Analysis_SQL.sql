@@ -133,7 +133,8 @@ CREATE TABLE IF NOT EXISTS attendance AS (
             attendance_raw
         ORDER BY
             user_id,
-            "date"
+            "date",
+            "case"
     )
     SELECT
         login.user_id,
@@ -187,9 +188,6 @@ CREATE TABLE IF NOT EXISTS attendance AS (
     ON
         login.user_id = logout.user_id
         AND login."date" = logout."date"
-        AND login.location = logout.location
-        AND login.timezone = logout.timezone
-        AND login."source" = logout."source"
     ORDER BY
         1, 2, 4
 );
@@ -205,7 +203,7 @@ DROP TABLE IF EXISTS users;
 CREATE TABLE IF NOT EXISTS users AS (
     SELECT DISTINCT
         user_id,
-        INITCAP(gender) AS gender,
+        COALESCE(INITCAP(gender), 'Other') AS gender,
         date_birth,
         date_hire,
         date_leave,
@@ -282,7 +280,7 @@ CREATE TABLE IF NOT EXISTS leave_requests AS (
 
 /*
     Create new cleaned table schedules:
-    - 1st level: Expand the "type" bigint array column into
+    - 1st level: Expand the user_id bigint array column into
                  a set of bigint values
     - 2nd level: Expand the "date" JSON array column into a 
                  set of date values
@@ -324,8 +322,6 @@ CREATE TABLE IF NOT EXISTS schedules AS (
         DISTINCT *
     FROM
         schedules_2nd_level
-    --WHERE
-    --    "type" <> 'Fake'
     ORDER BY
         user_id,
         "date"
@@ -447,7 +443,7 @@ attendance_merged_with_diffs_classified AS (
         CASE
             WHEN (logout_time IS NOT NULL AND
                   (logout_diff_minutes < 0 AND
-                    logout_diff_minutes >= -180))
+                    logout_diff_minutes >= -120))
                 THEN 'Yes'
             ELSE 'No'
         END AS is_undertime,
@@ -592,7 +588,7 @@ attendance_merged_with_diffs_classified AS (
             ELSE 'No'
         END AS no_logout
     FROM 
-    attendance_merged_with_diffs
+        attendance_merged_with_diffs
 )
 SELECT
     department,
@@ -626,7 +622,6 @@ WITH leave_counts_by_day AS (
         AND lr."date" = sch."date"
     WHERE
         lr."type" = 'Leave'
-        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1, 2
@@ -657,7 +652,6 @@ months_from_dates as (
 ),
 leave_counts_by_month AS (
     SELECT
-        --EXTRACT(MONTH FROM lr."date") AS month_order,
         TO_CHAR(lr."date", 'Mon') AS "month",
         COUNT(lr.leave_type) AS leave_count
     FROM
@@ -669,7 +663,6 @@ leave_counts_by_month AS (
         AND lr."date" = sch."date"
     WHERE
         lr."type" = 'Leave'
-        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1
@@ -727,7 +720,6 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
@@ -772,7 +764,6 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
@@ -815,7 +806,6 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        --AND lr.leave_type <> 'Day Off'
         AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
@@ -859,7 +849,6 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        --AND lr.leave_type <> 'Day Off'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
     ORDER BY
