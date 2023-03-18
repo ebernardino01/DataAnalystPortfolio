@@ -236,7 +236,7 @@ CREATE TABLE IF NOT EXISTS payroll AS (
         COALESCE(gross_pay, 0) AS gross_pay,
         data_salary_basic_rate,
         INITCAP(data_salary_basic_type) AS data_salary_basic_type,
-        COALESCE(currency, 'None') AS currency,
+        COALESCE(currency, 'IDR') AS currency,
         INITCAP(status) AS status,
         created_at
     FROM
@@ -265,8 +265,6 @@ CREATE TABLE IF NOT EXISTS leave_requests AS (
             created_at
         FROM
             leave_requests_raw
-        WHERE
-            user_id IS NOT NULL
     )
     SELECT
         DISTINCT *
@@ -362,16 +360,14 @@ WITH attendance_merged AS (
         sch.break_time
     FROM
         attendance att
-    INNER JOIN
+    JOIN
         schedules sch
         ON att.user_id = sch.user_id
         AND att.log_date = sch."date"
-    INNER JOIN
+    JOIN
         users u
         ON u.user_id = att.user_id
         AND u.user_id = sch.user_id
-    WHERE
-        sch."type" = 'Work'
     GROUP BY
         att.user_id,
         u.gender,
@@ -436,19 +432,23 @@ attendance_merged_with_diffs_classified AS (
         logout_diff_minutes,
         CASE
             WHEN (login_diff_minutes > 10 AND
-                  login_diff_minutes <= 120)
+                  login_diff_minutes <= 120 AND
+                  "type" = 'Work')
                 THEN 'Yes'
             ELSE 'No'
         END AS is_tardy,
         CASE
             WHEN (logout_time IS NOT NULL AND
+                  "type" = 'Work' AND
                   (logout_diff_minutes < 0 AND
                     logout_diff_minutes >= -120))
                 THEN 'Yes'
             ELSE 'No'
         END AS is_undertime,
         CASE
-            WHEN logout_time IS NULL
+            WHEN (login_time IS NOT NULL AND
+                  logout_time IS NULL AND
+                  "type" = 'Work')
                 THEN 'Yes'
             ELSE 'No'
         END AS no_logout
@@ -497,16 +497,14 @@ WITH attendance_merged AS (
         sch.break_time
     FROM
         attendance att
-    INNER JOIN
+    JOIN
         schedules sch
         ON att.user_id = sch.user_id
         AND att.log_date = sch."date"
-    INNER JOIN
+    JOIN
         users u
         ON u.user_id = att.user_id
         AND u.user_id = sch.user_id
-    WHERE
-        sch."type" = 'Work'
     GROUP BY
         att.user_id,
         u.gender,
@@ -571,19 +569,23 @@ attendance_merged_with_diffs_classified AS (
         logout_diff_minutes,
         CASE
             WHEN (login_diff_minutes > 10 AND
-                  login_diff_minutes <= 120)
+                  login_diff_minutes <= 120 AND
+                  "type" = 'Work')
                 THEN 'Yes'
             ELSE 'No'
         END AS is_tardy,
         CASE
             WHEN (logout_time IS NOT NULL AND
+                  "type" = 'Work' AND
                   (logout_diff_minutes < 0 AND
-                    logout_diff_minutes >= -180))
+                    logout_diff_minutes >= -120))
                 THEN 'Yes'
             ELSE 'No'
         END AS is_undertime,
         CASE
-            WHEN logout_time IS NULL
+            WHEN (login_time IS NOT NULL AND
+                  logout_time IS NULL AND
+                  "type" = 'Work')
                 THEN 'Yes'
             ELSE 'No'
         END AS no_logout
@@ -900,8 +902,6 @@ WITH attendance_merged AS (
         users u
         ON u.user_id = att.user_id
         AND u.user_id = sch.user_id
-    WHERE
-        sch."type" = 'Work'
 )
 SELECT
     user_id,
@@ -909,13 +909,15 @@ SELECT
     department,
     COUNT(
         CASE
-            WHEN login_source = 'Frontend'
+            WHEN login_source = 'Frontend' AND
+                 "type" = 'Work'
                 THEN login_source
             END
     ) AS frontend_login_count,
     COUNT(
         CASE
-            WHEN logout_source = 'Frontend'
+            WHEN logout_source = 'Frontend' AND
+                 "type" = 'Work'
                 THEN logout_source
             END
     ) AS frontend_logout_count
@@ -964,20 +966,20 @@ WITH attendance_merged AS (
         users u
         ON u.user_id = att.user_id
         AND u.user_id = sch.user_id
-    WHERE
-        sch."type" = 'Work'
 )
 SELECT
     department,
     COUNT(
         CASE
-            WHEN login_source = 'Frontend'
+            WHEN login_source = 'Frontend' AND
+                 "type" = 'Work'
                 THEN login_source
             END
     ) AS frontend_login_count,
     COUNT(
         CASE
-            WHEN logout_source = 'Frontend'
+            WHEN logout_source = 'Frontend' AND
+                 "type" = 'Work'
                 THEN logout_source
             END
     ) AS frontend_logout_count
