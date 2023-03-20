@@ -142,11 +142,11 @@ CREATE TABLE IF NOT EXISTS attendance AS (
         login.location as login_location,
         login."time" AS login_time,
         login.timezone AS login_timezone,
-        login."source" AS login_source,
+        COALESCE(login."source", 'None') AS login_source,
         logout.location as logout_location,
         logout."time" AS logout_time,
         logout.timezone AS logout_timezone,
-        logout."source" AS logout_source
+        COALESCE(logout."source", 'None') AS logout_source
     FROM (
         SELECT
             user_id,
