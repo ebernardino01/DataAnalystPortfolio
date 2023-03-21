@@ -343,8 +343,6 @@ WITH attendance_merged AS (
     SELECT
         att.user_id,
         u.gender,
-        u.date_hire,
-        u.date_leave,
         u."position" AS "position",
         u.department,
         att.log_date,
@@ -371,8 +369,6 @@ WITH attendance_merged AS (
     GROUP BY
         att.user_id,
         u.gender,
-        u.date_hire,
-        u.date_leave,
         u."position",
         u.department,
         att.log_date,
@@ -389,8 +385,6 @@ attendance_merged_with_diffs AS (
     SELECT
         user_id,
         gender,
-        date_hire,
-        date_leave,
         "position",
         department,
         log_date,
@@ -414,8 +408,6 @@ attendance_merged_with_diffs_classified AS (
     SELECT
         user_id,
         gender,
-        date_hire,
-        date_leave,
         "position",
         department,
         log_date,
@@ -480,8 +472,6 @@ WITH attendance_merged AS (
     SELECT
         att.user_id,
         u.gender,
-        u.date_hire,
-        u.date_leave,
         u."position" AS "position",
         u.department,
         att.log_date,
@@ -508,8 +498,6 @@ WITH attendance_merged AS (
     GROUP BY
         att.user_id,
         u.gender,
-        u.date_hire,
-        u.date_leave,
         u."position",
         u.department,
         att.log_date,
@@ -526,8 +514,6 @@ attendance_merged_with_diffs AS (
     SELECT
         user_id,
         gender,
-        date_hire,
-        date_leave,
         "position",
         department,
         log_date,
@@ -551,8 +537,6 @@ attendance_merged_with_diffs_classified AS (
     SELECT
         user_id,
         gender,
-        date_hire,
-        date_leave,
         "position",
         department,
         log_date,
@@ -873,8 +857,6 @@ WITH attendance_merged AS (
     SELECT
         att.user_id,
         u.gender,
-        u.date_hire,
-        u.date_leave,
         u."position" AS "position",
         u.department,
         att.log_date,
@@ -937,8 +919,6 @@ WITH attendance_merged AS (
     SELECT
         att.user_id,
         u.gender,
-        u.date_hire,
-        u.date_leave,
         u."position" AS "position",
         u.department,
         att.log_date,
