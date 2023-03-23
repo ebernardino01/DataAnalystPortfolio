@@ -608,7 +608,6 @@ WITH leave_counts_by_day AS (
         AND lr."date" = sch."date"
     WHERE
         lr."type" = 'Leave'
-        AND lr.status = 'Accepted'
     GROUP BY
         1, 2
     ORDER BY
@@ -649,7 +648,6 @@ leave_counts_by_month AS (
         AND lr."date" = sch."date"
     WHERE
         lr."type" = 'Leave'
-        AND lr.status = 'Accepted'
     GROUP BY
         1
 ),
@@ -681,7 +679,7 @@ ORDER BY
     EXTRACT(MONTH FROM TO_DATE("month", 'Mon'));
 
 
-/* Summary of approved leave counts by employee */
+/* Summary of leave counts by employee */
 WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
@@ -706,7 +704,6 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
     ORDER BY
@@ -725,7 +722,7 @@ ORDER BY
     4 DESC;
 
 
-/* Summary of approved leave counts by department */
+/* Summary of leave counts by department */
 WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
@@ -750,7 +747,6 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
     ORDER BY
@@ -767,7 +763,7 @@ ORDER BY
     2 DESC;
 
 
-/* Summary of approved leave counts by gender */
+/* Summary of leave counts by gender */
 WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
@@ -792,7 +788,6 @@ WITH leave_counts_by_emp AS (
         ON lr.user_id = u.user_id
     WHERE
         lr."type" = 'Leave'
-        AND lr.status = 'Accepted'
     GROUP BY
         1, 2, 3, 4, 5, 6, 7, 8, 9
     ORDER BY
