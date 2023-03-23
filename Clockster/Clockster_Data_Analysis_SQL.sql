@@ -684,8 +684,6 @@ WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
         u.gender,
-        u.date_hire AS date_hired,
-        u.date_leave AS date_left,
         u."position",
         u.department,
         lr."date" AS leave_date,
@@ -705,9 +703,9 @@ WITH leave_counts_by_emp AS (
     WHERE
         lr."type" = 'Leave'
     GROUP BY
-        1, 2, 3, 4, 5, 6, 7, 8, 9
+        1, 2, 3, 4, 5, 6, 7
     ORDER BY
-        1, 10 DESC
+        1, 8 DESC
 )
 SELECT
     user_id,
@@ -727,8 +725,6 @@ WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
         u.gender,
-        u.date_hire AS date_hired,
-        u.date_leave AS date_left,
         u."position",
         u.department,
         lr."date" AS leave_date,
@@ -748,9 +744,9 @@ WITH leave_counts_by_emp AS (
     WHERE
         lr."type" = 'Leave'
     GROUP BY
-        1, 2, 3, 4, 5, 6, 7, 8, 9
+        1, 2, 3, 4, 5, 6, 7
     ORDER BY
-        1, 10 DESC
+        1, 8 DESC
 )
 SELECT
     department,
@@ -768,8 +764,6 @@ WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
         u.gender,
-        u.date_hire AS date_hired,
-        u.date_leave AS date_left,
         u."position",
         u.department,
         lr."date" AS leave_date,
@@ -789,9 +783,9 @@ WITH leave_counts_by_emp AS (
     WHERE
         lr."type" = 'Leave'
     GROUP BY
-        1, 2, 3, 4, 5, 6, 7, 8, 9
+        1, 2, 3, 4, 5, 6, 7
     ORDER BY
-        1, 10 DESC
+        1, 8 DESC
 )
 SELECT
     gender,
@@ -810,8 +804,6 @@ WITH leave_counts_by_emp AS (
     SELECT 
         lr.user_id,
         u.gender,
-        u.date_hire AS date_hired,
-        u.date_leave AS date_left,
         u."position",
         u.department,
         lr."date" AS leave_date,
@@ -831,9 +823,9 @@ WITH leave_counts_by_emp AS (
     WHERE
         lr."type" = 'Leave'
     GROUP BY
-        1, 2, 3, 4, 5, 6, 7, 8, 9
+        1, 2, 3, 4, 5, 6, 7
     ORDER BY
-        1, 10 DESC
+        1, 8 DESC
 )
 SELECT
     status,
