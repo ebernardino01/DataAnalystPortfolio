@@ -789,14 +789,13 @@ WITH leave_counts_by_emp AS (
 )
 SELECT
     gender,
-    leave_type,
     SUM(leave_count) AS leave_count
 FROM
     leave_counts_by_emp
 GROUP BY
     gender
 ORDER BY
-    3 DESC;
+    2 DESC;
 
 
 /* Summary of leave counts by approval status */
