@@ -26,3 +26,9 @@ The following information are to be obtained in order to identify the circumstan
 3. Percentage of disputes received by the company that were lost (within two decimal places)
 4. Percentage of revenue lost from disputes (within two decimal places)
 5. The country where the company reached the highest losses from lost disputes (in USD)
+
+## Important Assumptions** ##
+
+1. All the services Yellevate was hired to do were fully completed
+2. The quality of the services provided is not the main driving reason for these invoice disputes
+3. Yellevate management believes most disputes are the result of contract technicalities or clients thinking they can get away with not paying for the services
